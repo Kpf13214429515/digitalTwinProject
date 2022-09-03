@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>IMPL220509</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <link type="text/css" rel="stylesheet" href="main.css" />
+    <script type="text/javascript" src="./js/jquery-3.6.0.js"></script>
+  </head>
+  <body>
+    <div style="display: none">
+      <br />
+      <br />
+      <label>ID</label>
+      <input name="id" id="id" type="text" />
+      <button type="submit" onclick="searchJoint()">查询</button>
+      <button onclick="testTween()">设备运动</button>
+    </div>
+    <div id="info">
+      <a target="_blank" rel="noopener">华南理工大学</a>
+      智能制造实验室<br />
+      <!-- “W”平移|“E”旋转|“R”缩放|“+/-”调整大小 <br>
+				“Q”切换世界/本地空间|“Shift”捕捉到网格 <br>
+				“X”切换X |“Y”切换Y |“Z”切换Z |“空格键”切换启用 <br>
+				“C”切换摄像头|“V”随机变焦 -->
+    </div>
+    <script type="module">
+      //导入写好的js库
+      import * as THREE from "./jsm/libs/three.module.js";
+      import Stats from "./jsm/libs/stats.module.js";
+      import { TWEEN } from "./jsm/libs/tween.module.min.js"; /* 动画控制库 */
+      import { ColladaLoader } from "./jsm/loaders/ColladaLoader.js"; //模型加载
+      import { OrbitControls } from "./jsm/controls/OrbitControls.js"; //鼠标控件
+      import { TransformControls } from "./jsm/controls/TransformControls.js";
+      import { DragControls } from "./jsm/controls/DragControls.js";
+
+      //声明基础变量
+      let scutCount = 0;
+      let container, stats;
+      let currentCamera, scene, renderer; /* 声明相机、场景、渲染器变量 */
+      let cameraPersp, cameraOrtho; //声明透视相机（三维展示）和正交相机
+      let control, orbit, dragcontrol; //可视化操作控件和鼠标控件
+      let particleLight; /* 声明点光源 */
+      let dae; /* 声明六轴机器人变量 */
+      let scut; /* 声明六轴机器人关节变量 */
+      let scutTween; /* 声明六轴机器人动画变量 */
+      const scuttweenParameters = {}; /* 声明动画参数并进行初始化 */
+
+      var equipmentDatebase = []; //定义设备组状态
+      var equipmentAllDB = [];
+
+      /* --------------------------------------------读取设备状态服务------------------------------------------------------- */
+      function getEquipmentStatus() {
+        $.ajax({
+          url: "http://localhost:8081/equipmentList",
+          async: false,
+          //method: "get",
+          success: function (data) {
+            $.each(data, function (i, equipmentDB) {
+              equipmentDatebase[i] = equipmentDB.status;
+              equipmentAllDB[i] = {
+                guid: equipmentDB.guid,
+                type: equipmentDB.type,
+                typeSubindex: equipmentDB.type_subindex,
+                ip_port: equipmentDB.ip_port,
+                name: equipmentDB.actual_name,
+                statu: equipmentDB.status,
+              };
+            });
+          },
+          error: (a, b, c) => {
+            window.console.log(a, b, c);
+          },
+        });
+        //window.console.log(equipmentStatus);
+      }
+      function teste() {
+        window.console.log(equipmentDatebase);
+        window.console.log(equipmentAllDB);
+      }
+
+      /* --------------------------------------------读取设备状态服务------------------------------------------------------- */
+
+      /* --------------------------------------------定时循环程序------------------------------------------------------- */
+      var getStatus;
+      window.productUwbStart = function productUwbStart() {
+        getStatus = setInterval(function () {
+          getEquipmentStatus();
+        }, 200);
+        var testDB = setInterval(function () {
+          teste();
+        }, 5000);
+      };
+      window.productUwbStop = function productUwbStop() {
+        window.console.log("stop");
+        clearInterval(getStatus);
+      };
+      /* --------------------------------------------定时循环程序------------------------------------------------------- */
+
+      /* --------------------------------------------模型加载方法------------------------------------------------------- */
+      /*加载模型，记得最后一个模型加载完需要启动init（）函数*/
+      //载入产品
+      const loader = new ColladaLoader(); /* 从Collada类中声明模型加载参数 */
+      loader.load("./models/collada/6robot.dae", function (collada) {
+        dae = collada.scene;
+        //遍历collada.scene下的子类
+        dae.traverse(function (child) {
+          //判断collada.scene下的子类标签是否是网格对象
+          if (child.isMesh) {
+            // model does not have normals
+            //满足网格对象的判断，准备加载时的渲染工作
+            child.material.flatShading = true;
+          }
+        });
+        dae.scale.x = dae.scale.y = dae.scale.z = 1.0;
+        dae.position.z = 0;
+        dae.position.x = 0;
+        dae.position.y = -0.3;
+        dae.updateMatrix();
+        scut = collada.kinematics; //构造模型运动学变量
+        init();
+      });
+      /* --------------------------------------------模型加载方法------------------------------------------------------- */
+
+      animate(); //启动
+      /* --------------------------------------------场景加载方法------------------------------------------------------- */
+      function init() {
+        //初始化载入、一个是渲染器、一个是相机、一个是光源，附加地板
+        container = document.createElement("div");
+        document.body.appendChild(container); //？
+        renderer = new THREE.WebGLRenderer(); //创建渲染器对象
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+
+        stats = new Stats();
+        container.appendChild(stats.dom);
+
+        //3D图形使用透视摄像机，（垂直视野角度，锥体的长宽比（通常是给定窗口宽度/窗口高度），摄像机视锥体近端面，远端面）
+        const aspect = window.innerWidth / window.innerHeight;
+        cameraPersp = new THREE.PerspectiveCamera(6, aspect, 0.01, 3000);
+        cameraOrtho = new THREE.OrthographicCamera(
+          -12 * aspect,
+          12 * aspect,
+          12,
+          -12,
+          0.01,
+          2000
+        );
+        currentCamera = cameraPersp;
+        currentCamera.position.set(1, 1, 1); //设置相机位置
+
+        scene = new THREE.Scene(); //创建场景对象
+
+        // Grid 地板
+        const grid = new THREE.GridHelper(20, 100, 0xffffff, 0x444444); //创建地板对象（每一个格子的长宽，每一个方向上格子的个数，地板的长宽，中心轴颜色，格子线框颜色）
+        //scene.add(grid); //将地板添加到场景中
+        const light3 = new THREE.DirectionalLight(0xffffff, 0.5);
+        light3.position.set(-1, 1, -1);
+        const light2 = new THREE.DirectionalLight(0xffffff, 1);
+        light2.position.set(-1, -1, -1);
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(1, 1, 1);
+        scene.add(light, light2, light3);
+
+        // Add the COLLADA，加载模型
+
+        scene.add(dae); //将设备模型加载到场景中
+        /* 载入控件 */
+        //载入移动控件，并且写入事件
+        control = new TransformControls(currentCamera, renderer.domElement);
+        control.addEventListener("change", render);
+        control.addEventListener("dragging-changed", function (event) {
+          orbit.enabled = !event.value;
+        });
+        // OrbitControls，鼠标控件，并且写入事件
+        orbit = new OrbitControls(currentCamera, renderer.domElement);
+        orbit.maxPolarAngle = Math.PI * 0.5;
+        orbit.minDistance = 10;
+        orbit.maxDistance = 100;
+        orbit.update();
+        orbit.addEventListener("change", render);
+
+        scene.add(control);
+        //DragControls拖拽控件
+        dragcontrol = new DragControls(
+          scene.children,
+          currentCamera,
+          renderer.domElement
+        );
+        dragcontrol.addEventListener("hoveron", function (event) {
+          control.attach(dae);
+        });
+
+        //scene.add( control );
+        //control.attach(robot);
+
+        //监听鼠标、键盘事件
+
+        window.addEventListener("resize", onWindowResize);
+
+        window.addEventListener("keydown", function (event) {
+          switch (event.keyCode) {
+            case 81: // Q
+              control.setSpace(control.space === "local" ? "world" : "local");
+              break;
+
+            case 16: // Shift
+              control.setTranslationSnap(100);
+              control.setRotationSnap(THREE.MathUtils.degToRad(15));
+              control.setScaleSnap(0.25);
+              break;
+
+            case 87: // W
+              control.setMode("translate");
+              break;
+
+            case 69: // E
+              control.setMode("rotate");
+              break;
+
+            case 82: // R
+              control.setMode("scale");
+              break;
+
+            case 67: // C
+              const position = currentCamera.position.clone();
+
+              currentCamera = currentCamera.isPerspectiveCamera
+                ? cameraOrtho
+                : cameraPersp;
+              currentCamera.position.copy(position);
+
+              orbit.object = currentCamera;
+              control.camera = currentCamera;
+
+              currentCamera.lookAt(
+                orbit.target.x,
+                orbit.target.y,
+                orbit.target.z
+              );
+              onWindowResize();
+              break;
+
+            case 86: // V
+              const randomFoV = Math.random() + 0.1;
+              const randomZoom = Math.random() + 0.1;
+
+              cameraPersp.fov = randomFoV * 160;
+              cameraOrtho.bottom = -randomFoV * 500;
+              cameraOrtho.top = randomFoV * 500;
+
+              cameraPersp.zoom = randomZoom * 5;
+              cameraOrtho.zoom = randomZoom * 5;
+              onWindowResize();
+              break;
+
+            case 187:
+            case 107: // +, =, num+
+              control.setSize(control.size + 0.1);
+              break;
+
+            case 189:
+            case 109: // -, _, num-
+              control.setSize(Math.max(control.size - 0.1, 0.1));
+              break;
+
+            case 88: // X
+              control.showX = !control.showX;
+              break;
+
+            case 89: // Y
+              control.showY = !control.showY;
+              break;
+
+            case 90: // Z
+              control.showZ = !control.showZ;
+              break;
+
+            case 32: // Spacebar
+              control.enabled = !control.enabled;
+              break;
+          }
+        });
+
+        window.addEventListener("keyup", function (event) {
+          switch (event.keyCode) {
+            case 16: // Shift
+              control.setTranslationSnap(null);
+              control.setRotationSnap(null);
+              control.setScaleSnap(null);
+              break;
+          }
+        });
+
+        //最后启动设备动作
+        scutSetupTween();
+      }
+      /* --------------------------------------------场景加载方法------------------------------------------------------- */
+      /* --------------------------------------------设备运动方法------------------------------------------------------- */
+      //需要设置根据数据库当中的设备状态来启动
+      function scutSetupTween() {
+        const scutduration = [
+          2000, 1500, 2000, 3000, 2000, 10000, 3000, 2000, 1500, 2000,
+        ];
+        const duration = scutduration[scutCount];
+        const scuttarget = [
+          [90, 40, -10, 0, -60],
+          [90, 0, 10, 0, -45],
+          [0, 0, 30, 0, -45],
+          [0, 60, -30, 0, -60],
+          [0, 0, 30, 0, -45],
+          [0, 0, 30, 0, -45],
+          [0, 60, -30, 0, -60],
+          [0, 0, 30, 0, -45],
+          [90, 0, 10, 0, -45],
+          [90, 40, -10, 0, -60],
+        ];
+        const zero = [0, 0, 0, 0, 0];
+        const target = {};
+        //scut机器人关节角度运动方法
+        var i = 0;
+        for (const prop in scut.joints) {
+          if (scut.joints.hasOwnProperty(prop)) {
+            if (!scut.joints[prop].static) {
+              const joint = scut.joints[prop];
+              const old = scuttweenParameters[prop];
+              const position = old ? old : joint.zeroPosition;
+              scuttweenParameters[prop] = position;
+              if (equipmentDatebase[6] == "working") {
+                target[prop] = scuttarget[scutCount][i];
+              } else {
+                target[prop] = zero[i];
+              }
+              i++;
+            }
+          }
+        }
+        if (equipmentDatebase[6] == "working") {
+          scutCount++;
+          if (scutCount == 9) {
+            scutCount = 0;
+          }
+        } else {
+          scutCount = 0;
+        }
+        scutTween = new TWEEN.Tween(scuttweenParameters)
+          .to(target, duration)
+          .easing(TWEEN.Easing.Quadratic.Out);
+        //动画更新程序
+        scutTween.onUpdate(function (object) {
+          //scut机器人运动更新
+          for (const prop in scut.joints) {
+            if (scut.joints.hasOwnProperty(prop)) {
+              if (!scut.joints[prop].static) {
+                scut.setJointValue(prop, object[prop]);
+              }
+            }
+          }
+        });
+        scutTween.start(); //启动动画
+        if (equipmentDatebase[6] == "working") {
+          setTimeout(scutSetupTween, duration); //间隔duration中的时间参数后，不断更新机器人的关节坐标
+        } else {
+          setTimeout(scutSetupTween, 500);
+        }
+      }
+      /* --------------------------------------------设备运动方法------------------------------------------------------- */
+
+      function onWindowResize() {
+        const aspect = window.innerWidth / window.innerHeight;
+
+        cameraPersp.aspect = aspect;
+        cameraPersp.updateProjectionMatrix();
+        cameraOrtho.left = cameraOrtho.bottom * aspect;
+        cameraOrtho.right = cameraOrtho.top * aspect;
+        cameraOrtho.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight); //渲染器设置渲染尺寸
+        if (renderer == undefined) {
+          return;
+        }
+        render(); //执行渲染函数
+      }
+
+      /* 动画方法 */
+      function animate() {
+        requestAnimationFrame(animate); //请求再次执行渲染函数render
+        render(); //执行渲染函数
+        stats.update();
+        TWEEN.update(); //更新动画
+      }
+
+      /* 渲染方法，注意每当需要场景改变或者模型改变或者相机发生改变时，都需要重新进行渲染，执行渲染操作 */
+      function render() {
+        // const timer = Date.now() * 0.0001;
+        // camera.position.x = Math.cos( timer ) * 20;
+        // camera.position.y = 10;
+        // camera.position.z = Math.sin( timer ) * 20;
+        // camera.lookAt( 0, 5, 0 );
+        /* 根据timer变量每帧调整相机得位置 */
+        /* particleLight.position.x = Math.sin( timer * 4 ) * 3009;
+     			particleLight.position.y = Math.cos( timer * 5 ) * 4000;
+     			particleLight.position.z = Math.cos( timer * 4 ) * 3009; */
+        renderer.render(scene, currentCamera); //执行渲染操作
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Title</title>
+	<script src="../static/js/jquery-3.6.0.js"></script>
+</head>
+<body>
+<div>
+	<label>ID</label>
+	<input name="id" id="id" type="text" >
+	<button type="submit" onclick="searchJoint()">查询</button>
+</div>
+<div>
+	<p>关节名字：<span id="jointname">---</span></p>
+	<p>关节类型：<span id="jointtype">---</span></p>
+	<p>关节当前数据：<span id="jointdb">---</span></p>
+</div>
+</body>
+<script type="text/javascript">
+	function searchJoint() {
+		alert( 'hello' );
+		var id = $( '#id' ).val();
+		alert( 'searchJoint' + id );
+		//设为disable则无法获取
+		$.ajax( {
+			url: 'http://localhost:8080/searchById',
+			method: 'post',
+			data: {
+				'jointId': $( '#id' ).val()
+			},
+			dataType: 'json',
+			success: function ( data ) {
+				alert( data.status );
+				if (data.status == 'success') {
+					//alert(data.joint.name);
+					alert(data.joint.jointType);
+					alert(data.joint.jointDb);
+					$('#jointname').html( data.joint.jName);
+					$('#jointtype').html( data.joint.jointType );
+					$('#jointdb').html( data.joint.jointDb );
+				}
+			},
+			error: function ( data ) {
+				alert( 'wrong' );
+			}
+		} );
+	}
+</script>
+
+</html>
