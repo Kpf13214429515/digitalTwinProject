@@ -1,6 +1,6 @@
-package com.mapper;
+package proj.mapper;
 
-import com.bean.Equipment;
+import proj.bean.Equipment;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;
 

@@ -1,4 +1,4 @@
-package com.service;
+package proj.service;
 
 
 import lombok.AllArgsConstructor;

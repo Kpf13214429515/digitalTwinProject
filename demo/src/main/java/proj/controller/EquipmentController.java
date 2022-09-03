@@ -1,8 +1,8 @@
-package com.controller;
+package proj.controller;
 
 import com.alibaba.fastjson.JSONObject;
-import com.bean.Equipment;
-import com.service.EquipmentService;
+import proj.bean.Equipment;
+import proj.service.EquipmentService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Controller;

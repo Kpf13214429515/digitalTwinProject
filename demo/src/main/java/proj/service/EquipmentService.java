@@ -1,8 +1,8 @@
-package com.service;
+package proj.service;
 
 
-import com.bean.Equipment;
-import com.mapper.EquipmentMapper;
+import proj.bean.Equipment;
+import proj.mapper.EquipmentMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

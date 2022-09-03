@@ -1,4 +1,4 @@
-package com.mapper;
+package proj.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.springframework.stereotype.Repository;

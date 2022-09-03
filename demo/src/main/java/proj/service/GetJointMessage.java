@@ -1,4 +1,4 @@
-package com.service;
+package proj.service;
 
 
 public class GetJointMessage {

@@ -2,7 +2,7 @@
 <!DOCTYPE mapper
         PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.mapper.UserMapper">
+<mapper namespace="proj.mapper.UserMapper">
     <!--这个id是定位到接口中的查询方法，resultMap是指接口中继承的类
     <select id="getEquipmentById" resultMap="Equipment">
         select * from 4robot where jointId = #{id}
